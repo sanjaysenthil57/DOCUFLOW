@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.env
+__pycache__/
+*.pyc
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/mongodb_data/*
+!storage/mongodb_data/.gitkeep
+.DS_Store
+Thumbs.db

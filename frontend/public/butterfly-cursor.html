@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Butterfly Cursor Effect — Vanilla JS + CSS</title>
+  <style>
+    /* -------------------------------------------------------------
+       GLOBAL RESET & REFERENCE THEME
+       Page / host background: #0d0d0d
+       Backdrop: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, #f5f5f5 5%, #0d0d0d), #0d0d0d 70%)
+       Native cursor is NEVER hidden: no cursor: none anywhere!
+       ------------------------------------------------------------- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-base: #0d0d0d;
+      --color-start: #FF8FD0;
+      --color-end: #5B9BF6;
+      --text-main: #f0f0f4;
+      --text-muted: #8b8b98;
+      --border-subtle: rgba(255, 255, 255, 0.1);
+      --card-bg: rgba(255, 255, 255, 0.035);
+      --card-border: rgba(255, 255, 255, 0.08);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      background-image: radial-gradient(
+        120% 90% at 50% 0%,
+        color-mix(in srgb, #f5f5f5 5%, #0d0d0d),
+        #0d0d0d 70%
+      );
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      overflow-x: hidden;
+      /* CRITICAL ACCESSIBILITY: Native cursor remains default */
+      cursor: auto;
+    }
+
+    /* -------------------------------------------------------------
+       RESPONSIVE REFERENCE FRAME
+       Reference frame: 493x541 CSS px (portrait, ~1:1.1)
+       Effect canvas covers the container; relative pointer tracking
+       ------------------------------------------------------------- */
+    .preview-stage-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      max-width: 680px;
+    }
+
+    .frame-toolbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 4px;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      font-size: 11px;
+      font-weight: 500;
+      color: #e2e2ec;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--color-start);
+      box-shadow: 0 0 8px var(--color-start);
+    }
+
+    .frame-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .control-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .control-btn.active {
+      background: linear-gradient(90deg, rgba(255, 143, 208, 0.2), rgba(91, 155, 246, 0.2));
+      border-color: rgba(255, 143, 208, 0.5);
+      color: #ffffff;
+    }
+
+    /* 493x541 reference preview container */
+    .reference-frame {
+      position: relative;
+      width: 493px;
+      height: 541px;
+      max-width: 100%;
+      border-radius: 20px;
+      background-color: var(--bg-base);
+      background-image: radial-gradient(
+        120% 90% at 50% 0%,
+        color-mix(in srgb, #f5f5f5 5%, #0d0d0d),
+        #0d0d0d 70%
+      );
+      border: 1px solid var(--card-border);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 28px;
+      overflow: hidden;
+      transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease;
+    }
+
+    .reference-frame.fullscreen-mode {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: none;
+      border-radius: 0;
+      border: none;
+      z-index: 1000;
+    }
+
+    /* Canvas is rendered as additive overlay */
+    canvas.butterfly-cursor-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      aria-hidden: true;
+      z-index: 50;
+    }
+
+    /* Frame internal content */
+    .frame-header {
+      position: relative;
+      z-index: 10;
+    }
+
+    .frame-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #FF8FD0, #5B9BF6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .frame-desc {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+
+    /* Interactive playground zone with a, button, input */
+    .interactive-playground {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin: auto 0;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px dashed rgba(255, 255, 255, 0.09);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    .interactive-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #a0a0b2;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .interactive-label span {
+      font-family: monospace;
+      font-size: 10px;
+      color: #636378;
+    }
+
+    .input-field {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-main);
+      outline: none;
+      transition: all 0.2s ease;
+      cursor: text;
+    }
+
+    .input-field:focus {
+      border-color: var(--color-end);
+      box-shadow: 0 0 0 2px rgba(91, 155, 246, 0.25);
+    }
+
+    .interactive-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn-primary {
+      background: linear-gradient(90deg, #FF8FD0, #5B9BF6);
+      color: #0b0b10;
+      box-shadow: 0 4px 15px rgba(255, 143, 208, 0.25);
+    }
+
+    .action-btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(91, 155, 246, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .action-btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-subtle);
+      color: #f0f0f4;
+    }
+
+    .action-btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .demo-link {
+      color: var(--color-end);
+      font-size: 12px;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      transition: color 0.15s ease;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .demo-link:hover {
+      color: var(--color-start);
+    }
+
+    /* Frame Footer Specs */
+    .frame-footer {
+      position: relative;
+      z-index: 10;
+      display: grid;
+      grid-cols: 2;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .spec-item {
+      font-size: 11px;
+      color: #7d7d8e;
+    }
+
+    .spec-item strong {
+      color: #d1d1de;
+      font-weight: 500;
+    }
+
+    /* Accessibility indicator card */
+    .a11y-panel {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 16px 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .a11y-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e5e5ed;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-tag {
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    .status-tag.active {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-tag.inactive {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    @media (max-width: 540px) {
+      .reference-frame {
+        width: 100%;
+        height: auto;
+        min-height: 480px;
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="preview-stage-wrapper">
+    <!-- Top Reference Bar -->
+    <div class="frame-toolbar">
+      <div class="badge-pill">
+        <span class="badge-dot"></span>
+        Butterfly Cursor Engine • 16px Wingspan • 3.5Hz Flap
+      </div>
+      <div class="frame-controls">
+        <button id="toggleScopeBtn" class="control-btn" title="Toggle between reference box and full-screen overlay">
+          Full Screen
+        </button>
+        <button id="resetPositionBtn" class="control-btn" title="Reset butterfly position">
+          Center
+        </button>
+      </div>
+    </div>
+
+    <!-- Reference Frame: 493x541 CSS px -->
+    <div id="effectContainer" class="reference-frame">
+      <!-- Canvas overlay dynamically injected here by ButterflyCursor -->
+
+      <!-- Content within preview box -->
+      <div class="frame-header">
+        <h1 class="frame-title">Custom Butterfly Cursor</h1>
+        <p class="frame-desc">
+          Two wing shapes on an additive canvas whose spread is driven by a sine at 3.5Hz, a body that banks into turns, and a 6px slow wander offset.
+        </p>
+      </div>
+
+      <!-- Interactive Playground with a, button, input elements -->
+      <div class="interactive-playground">
+        <div class="interactive-label">
+          Hover Test Playground
+          <span>closest('a, button, input')</span>
+        </div>
+
+        <input
+          type="text"
+          class="input-field"
+          placeholder="Hover or click to type (system text cursor preserved)..."
+        />
+
+        <div class="interactive-row">
+          <button class="action-btn action-btn-primary" type="button">
+            Primary Action
+          </button>
+          <button class="action-btn action-btn-secondary" type="button">
+            Secondary Action
+          </button>
+        </div>
+
+        <div>
+          <a href="#test" class="demo-link" onclick="event.preventDefault()">
+            → Test hyperlink navigation target
+          </a>
+        </div>
+      </div>
+
+      <!-- Technical parameters display -->
+      <div class="frame-footer">
+        <div class="spec-item">Wingspan: <strong>16px</strong></div>
+        <div class="spec-item">Flap Speed: <strong>3.5 Hz</strong></div>
+        <div class="spec-item">Follow Lerp: <strong>0.07</strong></div>
+        <div class="spec-item">Wander Radius: <strong>6px</strong></div>
+        <div class="spec-item" style="grid-column: span 2;">
+          Color: <strong>gradient #FF8FD0 → #5B9BF6 @ 90°</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accessibility Guarantee Panel -->
+    <div class="a11y-panel">
+      <div class="a11y-title">
+        <span>Accessibility & Environment Conformance</span>
+        <span id="capabilityStatus" class="status-tag active">Active</span>
+      </div>
+      <p>
+        • <strong>Native Cursor Preserved:</strong> No <code>cursor: none</code> anywhere. The system arrow remains 100% active and retains standard hover, text, and pointer states.<br>
+        • <strong>Additive Non-Blocking Overlay:</strong> <code>position: absolute/fixed</code>, <code>pointer-events: none</code>, <code>aria-hidden="true"</code> — zero click interception.<br>
+        • <strong>Reduced Motion & Pointer Filter:</strong> Automatically unmounts when <code>prefers-reduced-motion: reduce</code> or on coarse/touch screens.
+      </p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createButterflyCursor } from './butterflyCursor.js';
+
+    let isFullscreen = false;
+    let cursorInstance = null;
+    const container = document.getElementById('effectContainer');
+    const toggleScopeBtn = document.getElementById('toggleScopeBtn');
+    const resetPositionBtn = document.getElementById('resetPositionBtn');
+    const capabilityStatus = document.getElementById('capabilityStatus');
+
+    function initCursor(fullscreenMode = false) {
+      if (cursorInstance) {
+        cursorInstance.destroy();
+      }
+
+      cursorInstance = createButterflyCursor({
+        container: fullscreenMode ? document.body : container,
+        isFixed: fullscreenMode,
+        wingspan: 16,
+        flapSpeed: 3.5,
+        follow: 0.07,
+        wander: 6,
+        colorStart: '#FF8FD0',
+        colorEnd: '#5B9BF6'
+      });
+
+      if (!cursorInstance.isSupported()) {
+        capabilityStatus.textContent = 'Disabled (Reduced Motion or Touch)';
+        capabilityStatus.className = 'status-tag inactive';
+      } else {
+        capabilityStatus.textContent = fullscreenMode ? 'Full-screen Active' : 'Reference Box Active';
+        capabilityStatus.className = 'status-tag active';
+      }
+    }
+
+    // Toggle scope button
+    toggleScopeBtn.addEventListener('click', () => {
+      isFullscreen = !isFullscreen;
+      if (isFullscreen) {
+        container.classList.add('fullscreen-mode');
+        toggleScopeBtn.textContent = 'Exit Full Screen';
+        toggleScopeBtn.classList.add('active');
+        initCursor(true);
+      } else {
+        container.classList.remove('fullscreen-mode');
+        toggleScopeBtn.textContent = 'Full Screen';
+        toggleScopeBtn.classList.remove('active');
+        initCursor(false);
+      }
+    });
+
+    // Reset center button
+    resetPositionBtn.addEventListener('click', () => {
+      const rect = container.getBoundingClientRect();
+      const fakeEvent = new PointerEvent('pointermove', {
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      });
+      window.dispatchEvent(fakeEvent);
+    });
+
+    // Initial mounting inside 493x541 reference box
+    initCursor(false);
+  </script>
+</body>
+</html>
