@@ -76,9 +76,6 @@ export default function LoginPage({ onNavigate }) {
           <h1 className="text-2xl font-bold text-white tracking-tight drop-shadow-sm">
             DocuFlow <span className="text-blue-400 font-extrabold">AI</span>
           </h1>
-          <p className="mt-1 text-xs text-slate-300 font-medium tracking-wide">
-            Kongu Engineering College • Autonomous MCA Platform
-          </p>
         </div>
 
         {/* Main Login Card */}
